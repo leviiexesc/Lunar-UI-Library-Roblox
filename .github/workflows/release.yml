@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Bundle Lunar UI
+      run: |
+        $Output = "local LunarUI_Modules = {}`n"
+        $Output += "local function require(name)`n"
+        $Output += "    if not LunarUI_Modules[name] then error('Module not found: ' .. tostring(name)) end`n"
+        $Output += "    if not LunarUI_Modules[name].IsLoaded then`n"
+        $Output += "        LunarUI_Modules[name].Value = LunarUI_Modules[name].Func()`n"
+        $Output += "        LunarUI_Modules[name].IsLoaded = true`n"
+        $Output += "    end`n"
+        $Output += "    return LunarUI_Modules[name].Value`n"
+        $Output += "end`n`n"
+
+        $Files = Get-ChildItem -Path "src" -Recurse -Filter "*.lua"
+        foreach ($File in $Files) {
+            $Name = $File.BaseName
+            $Content = Get-Content $File.FullName -Raw
+            $Content = [System.Text.RegularExpressions.Regex]::Replace($Content, 'require\(.*?\.([^.]+)\)', 'require("$1")')
+            $Output += "LunarUI_Modules['$Name'] = {IsLoaded = false, Func = function()`n"
+            $Output += "local script = {}`n"
+            $Output += $Content + "`n"
+            $Output += "end}`n`n"
+        }
+        $Output += "return require('LunarUI')`n"
+        Set-Content -Path "LunarUI.lua" -Value $Output
+
+    - name: Update Latest Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: LunarUI.lua
+        tag_name: latest
+        name: Latest Build
+        prerelease: false
